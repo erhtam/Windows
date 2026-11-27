@@ -98,7 +98,20 @@ public class Archiv : Window {
  string heading=subject.Success?subject.Groups[1].Value.Trim():lines.FirstOrDefault()??fallback;
  e.Titel=heading[..Math.Min(100,heading.Length)];
  var excerpt=string.Join(" ",lines.Where(s=>!Regex.IsMatch(s,@"(?i)^(Von|From|An|To|Betreff|Subject|Gesendet|Sent):")).Take(5));
- e.Kurzinfo=excerpt[..Math.Min(280,excerpt.Length)];
+ var details = new List<string>();
+   void AddField(string label, string pattern) {
+     var match = Regex.Match(e.Inhalt, pattern, RegexOptions.IgnoreCase | RegexOptions.Multiline);
+     if (match.Success) details.Add(label + ": " + match.Groups[1].Value.Trim());
+   }
+   if (e.Art == "E-Mail") {
+     AddField("Von", @"^[ \t]*(?:Von|From)[ \t]*:[ \t]*([^\r\n]+)");
+   } else if (e.Art == "Rechnung") {
+     AddField("Rechnungsnr.", @"\b(?:Rechnungsnummer|Rechnungs[- ]?Nr\.?)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9/._-]*\d[A-Z0-9/._-]*|\d)");
+     AddField("Gesamt", @"\b(?:Gesamtbetrag|Rechnungsbetrag|Endbetrag|Bruttobetrag)[ \t]*:?[ \t]*((?:EUR[ \t]*|€[ \t]*)?\d[\d.,]*[ \t]*(?:EUR|€)?)");
+     AddField("Fällig am", @"\b(?:fällig am|zahlbar bis)[ \t]*:?[ \t]*(\d{1,2}\.\d{1,2}\.\d{2,4})");
+   }
+   if (details.Count > 0) excerpt = string.Join(" · ", details) + " — " + excerpt;
+   e.Kurzinfo=excerpt[..Math.Min(280,excerpt.Length)];
  }
  async Task Paste(){
  if(Clipboard.ContainsFileDropList()){await Import(Clipboard.GetFileDropList().Cast<string>());return;}
