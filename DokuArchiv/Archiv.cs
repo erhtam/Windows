@@ -50,15 +50,23 @@ public partial class Archiv : Window {
  void Commit()=>Save(catalog,entries);
  public Archiv(){
  Directory.CreateDirectory(root);Title="DokuArchiv";Width=1220;Height=780;MinWidth=760;MinHeight=540;
- FontFamily=new FontFamily("Inter, Segoe UI");Background=Brushes.WhiteSmoke;
- var layout=new DockPanel{Margin=new Thickness(14)}; Content=layout;
+ FontFamily=new FontFamily("Inter, Segoe UI");Background=Brushes.White;FontSize=13;
+ SolidColorBrush Paint(string hex)=>new((Color)ColorConverter.ConvertFromString(hex));
+ var blue=Paint("#1455BC");var ink=Paint("#182D4C");Foreground=ink;
+ var header=new DockPanel{LastChildFill=false,Margin=new Thickness(0,0,0,8),Background=new LinearGradientBrush(Color.FromRgb(20,47,100),Color.FromRgb(25,91,205),0)};
+ header.Children.Add(new TextBlock{Text="▰   DokuArchiv",Foreground=Brushes.White,FontSize=21,FontWeight=FontWeights.SemiBold,Margin=new Thickness(14,9,14,10)});
+ var layout=new DockPanel{Margin=new Thickness(14)}; Content=layout;DockPanel.SetDock(header,Dock.Top);layout.Children.Add(header);
  var bar=new WrapPanel();DockPanel.SetDock(bar,Dock.Top);layout.Children.Add(bar);
  Button Action(Panel panel,string label,Func<Task> action){
- var b=new Button{Content=label,Padding=new Thickness(9,5,9,5),Margin=new Thickness(2)};panel.Children.Add(b);
+ var b=new Button{Content=label,Padding=new Thickness(9,5,9,5),Margin=new Thickness(2)};bool primary=label is "Dateien hinzufügen" or "Speichern" or "Archiv fragen";
+ b.Background=primary?blue:Brushes.White;b.Foreground=primary?Brushes.White:ink;b.BorderBrush=primary?blue:Paint("#B5C5DB");
+ b.Resources[typeof(Border)]=new Style(typeof(Border)){Setters={new Setter(Border.CornerRadiusProperty,new CornerRadius(5))}};
+ if(panel==header){DockPanel.SetDock(b,Dock.Right);b.VerticalAlignment=VerticalAlignment.Center;b.Margin=new Thickness(8);}
+ panel.Children.Add(b);
  b.Click+=async(_,_)=>await Run(action);return b;}
  Action(bar,"Dateien hinzufügen",async()=>{var d=new OpenFileDialog{Multiselect=true,Filter="Dokumente und Bilder|*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.txt;*.md"};if(d.ShowDialog()==true)await Import(d.FileNames);});
  Action(bar,"Ordner durchsuchen",()=>{FolderSearch();return Task.CompletedTask;});
- Action(bar,"Archiv fragen",()=>{Ask();return Task.CompletedTask;});
+ Action(header,"Archiv fragen",()=>{Ask();return Task.CompletedTask;});
  Action(bar,"Neue Notiz",()=>{Note("");return Task.CompletedTask;});
  Action(bar,"Einfügen",Paste);
  var targetLabel = new TextBlock { Margin=new Thickness(4,5,4,3), TextWrapping=TextWrapping.Wrap };
@@ -66,13 +74,16 @@ public partial class Archiv : Window {
    var paths=Targets();
    targetLabel.Text=paths.Count==0 ? "Sicherungsziele: Noch kein Ordner gewählt" : "Sicherungsziele ("+paths.Count+")\n"+string.Join("\n",paths);
  }
- var targetView=new ScrollViewer { Content=targetLabel, MaxHeight=100, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
+ var targetView=new ScrollViewer { Background=Paint("#E0EFFF"),Padding=new Thickness(8,2,8,2),Margin=new Thickness(0,6,0,0),Content=targetLabel, MaxHeight=100, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
  DockPanel.SetDock(targetView,Dock.Top);
  layout.Children.Add(targetView);
  ShowTargets();
- Action(bar,"Sicherungsziel hinzufügen",()=>{var d=new OpenFolderDialog{Title="Synchronisierten OneDrive-, Nextcloud- oder Google-Drive-Ordner wählen"};if(d.ShowDialog()==true){if(Path.GetFullPath(d.FolderName).StartsWith(root,StringComparison.OrdinalIgnoreCase))throw new IOException("Bitte ein Ziel außerhalb des Archivs wählen.");Save(settings,Targets().Append(d.FolderName).Distinct(StringComparer.OrdinalIgnoreCase));ShowTargets();}return Task.CompletedTask;});
- Action(bar,"Jetzt sichern",Backup);
- Action(bar,"Sicherung einlesen",Restore);
+ var backupMenu=new ContextMenu();
+ void BackupChoice(string label,Func<Task> work){var item=new MenuItem{Header=label};backupMenu.Items.Add(item);item.Click+=async(_,_)=>await Run(work);}
+ BackupChoice("Sicherungsziel hinzufügen",()=>{var d=new OpenFolderDialog{Title="Synchronisierten OneDrive-, Nextcloud- oder Google-Drive-Ordner wählen"};if(d.ShowDialog()==true){if(Path.GetFullPath(d.FolderName).StartsWith(root,StringComparison.OrdinalIgnoreCase))throw new IOException("Bitte ein Ziel außerhalb des Archivs wählen.");Save(settings,Targets().Append(d.FolderName).Distinct(StringComparer.OrdinalIgnoreCase));ShowTargets();}return Task.CompletedTask;});
+ BackupChoice("Jetzt sichern",Backup);
+ BackupChoice("Sicherung einlesen",Restore);
+ var menuButton=Action(bar,"Sicherung ▾",()=>Task.CompletedTask);menuButton.Click+=(_,_)=>{backupMenu.PlacementTarget=menuButton;backupMenu.Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom;backupMenu.IsOpen=true;};
  var filters=new DockPanel{Margin=new Thickness(0,10,0,10)};DockPanel.SetDock(filters,Dock.Top);layout.Children.Add(filters);
  filters.Children.Add(new Label{Content="Suche"});DockPanel.SetDock(trash,Dock.Right);filters.Children.Add(trash);DockPanel.SetDock(areaFilter,Dock.Right);filters.Children.Add(areaFilter);filters.Children.Add(search);
  areaFilter.SelectionChanged+=(_,_)=>Refresh();
@@ -83,14 +94,19 @@ public partial class Archiv : Window {
  foreach(var pair in new[]{("Titel",title),("Schlagwörter",tags),("Kurzinfo",summary)}){fields.Children.Add(new Label{Content=pair.Item1});fields.Children.Add(pair.Item2);}
  fields.Children.Add(image);fields.Children.Add(new Label{Content="Inhalt / erkannter Text"});
  var buttons=new WrapPanel();DockPanel.SetDock(buttons,Dock.Bottom);pane.Children.Add(buttons);pane.Children.Add(body);
- var saved = new TextBlock { Foreground=Brushes.DarkGreen, FontWeight=FontWeights.SemiBold, Margin=new Thickness(4,2,4,4) };
+ var saved = new TextBlock { Foreground=blue, FontWeight=FontWeights.SemiBold, Margin=new Thickness(4,2,4,4) };
  DockPanel.SetDock(saved,Dock.Bottom);pane.Children.Insert(pane.Children.IndexOf(body),saved);
  grid.SelectionChanged+=(_,_)=>saved.Text="";
  Action(buttons,"Speichern",()=>{if(Current is {} e){e.Bereich=area.SelectedItem as string??"Unzugeordnet";e.Titel=title.Text;e.Tags=tags.Text;e.Inhalt=body.Text;e.Kurzinfo=summary.Text;Commit();Refresh(e);grid.UnselectAll();ShowEntry();saved.Text="✓ Gespeichert um "+DateTime.Now.ToString("HH:mm:ss");}return Task.CompletedTask;});
  Action(buttons,"Original öffnen",()=>{if(Current is {Datei.Length:>0} e)Process.Start(new ProcessStartInfo(Path.Combine(root,e.Datei)){UseShellExecute=true});return Task.CompletedTask;});
  Action(buttons,"Papierkorb ↔ Archiv",()=>{if(Current is {} e){e.Entfernt=!e.Entfernt;Commit();Refresh();}return Task.CompletedTask;});
+ grid.Background=Brushes.White;grid.BorderBrush=Paint("#C8D5E6");grid.GridLinesVisibility=DataGridGridLinesVisibility.Horizontal;grid.HorizontalGridLinesBrush=Paint("#DFE7F1");grid.RowHeight=34;grid.ColumnHeaderHeight=34;grid.HeadersVisibility=DataGridHeadersVisibility.Column;
+ grid.AlternatingRowBackground=Paint("#F7FAFF");
+ grid.Resources[SystemColors.HighlightBrushKey]=Paint("#D9EAFF");grid.Resources[SystemColors.HighlightTextBrushKey]=ink;
+ var badge=new Style(typeof(TextBlock));badge.Setters.Add(new Setter(TextBlock.PaddingProperty,new Thickness(6,2,6,2)));badge.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Left));badge.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center));
+ foreach(var pair in new[]{("Privat","#EBE3FA"),("Geschäftlich","#D5E8FF")})badge.Triggers.Add(new DataTrigger{Binding=new System.Windows.Data.Binding("Bereich"),Value=pair.Item1,Setters={new Setter(TextBlock.BackgroundProperty,Paint(pair.Item2)),new Setter(TextBlock.ForegroundProperty,ink)}});
  layout.Children.Add(grid);
- foreach(var col in new[]{("Hinzugefügt","Datum",135),("Bereich","Bereich",105),("Art","Art",95),("Titel","Titel",210),("Kurzinfo","Kurzinfo",300)})grid.Columns.Add(new DataGridTextColumn{Header=col.Item1,Binding=new System.Windows.Data.Binding(col.Item2),Width=col.Item3});
+ foreach(var col in new[]{("Hinzugefügt","Datum",135),("Bereich","Bereich",105),("Art","Art",95),("Titel","Titel",210),("Kurzinfo","Kurzinfo",300)})grid.Columns.Add(new DataGridTextColumn{Header=col.Item1,Binding=new System.Windows.Data.Binding(col.Item2),ElementStyle=col.Item2=="Bereich"?badge:DataGridTextColumn.DefaultElementStyle,Width=col.Item2=="Kurzinfo"?new DataGridLength(1,DataGridLengthUnitType.Star):col.Item3,MinWidth=col.Item2=="Kurzinfo"?120:50});
  grid.SelectionChanged+=(_,_)=>ShowEntry();search.TextChanged+=(_,_)=>Refresh();trash.Click+=(_,_)=>Refresh();
  AllowDrop=true;Drop+=async(_,e)=>{if(e.Data.GetData(DataFormats.FileDrop) is string[] files)await Run(()=>Import(files));};
  PreviewKeyDown+=async(_,e)=>{if(e.Key==System.Windows.Input.Key.V && System.Windows.Input.Keyboard.Modifiers==System.Windows.Input.ModifierKeys.Control && System.Windows.Input.Keyboard.FocusedElement is not TextBox){e.Handled=true;await Run(Paste);}};
