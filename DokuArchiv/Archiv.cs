@@ -26,7 +26,7 @@ public class Eintrag {
  public string Tags {get;set;}="";
  public bool Entfernt {get;set;}
 }
-public class Archiv : Window {
+public partial class Archiv : Window {
  static readonly string root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AssystDokuArchiv");
  static readonly string catalog=Path.Combine(root,"katalog.json");
  readonly string settings=Path.Combine(Path.GetDirectoryName(root)!,"AssystDokuArchiv-Ziele.json");
@@ -57,6 +57,7 @@ public class Archiv : Window {
  var b=new Button{Content=label,Padding=new Thickness(9,5,9,5),Margin=new Thickness(2)};panel.Children.Add(b);
  b.Click+=async(_,_)=>await Run(action);return b;}
  Action(bar,"Dateien hinzufügen",async()=>{var d=new OpenFileDialog{Multiselect=true,Filter="Dokumente und Bilder|*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.txt;*.md"};if(d.ShowDialog()==true)await Import(d.FileNames);});
+ Action(bar,"Ordner durchsuchen",()=>{FolderSearch();return Task.CompletedTask;});
  Action(bar,"Archiv fragen",()=>{Ask();return Task.CompletedTask;});
  Action(bar,"Neue Notiz",()=>{Note("");return Task.CompletedTask;});
  Action(bar,"Einfügen",Paste);
@@ -130,29 +131,29 @@ public class Archiv : Window {
    if (details.Count > 0) excerpt = string.Join(" · ", details) + " — " + excerpt;
    e.Kurzinfo=excerpt[..Math.Min(280,excerpt.Length)];
  }
- void Ask(){
- var dialog=new Window{Title="Archiv fragen · lokale KI",Owner=this,Width=650,Height=520,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+ void Ask(List<Eintrag>? folderFiles=null, string initialQuestion=""){
+ var dialog=new Window{Title="Archiv fragen · lokale KI",Owner=Application.Current.Windows.OfType<Window>().LastOrDefault(w=>w.IsActive)??this,Width=650,Height=520,WindowStartupLocation=WindowStartupLocation.CenterOwner};
  var panel=new DockPanel{Margin=new Thickness(16)};dialog.Content=panel;
  var top=new StackPanel();DockPanel.SetDock(top,Dock.Top);panel.Children.Add(top);
  var model=new TextBox{Text="qwen2.5:7b"};top.Children.Add(new Label{Content="Lokales Ollama-Modell"});top.Children.Add(model);
- var q=new TextBox();top.Children.Add(new Label{Content="Deine Frage zum Archiv"});top.Children.Add(q);
+ var q=new TextBox{Text=initialQuestion};top.Children.Add(new Label{Content=folderFiles==null?"Deine Frage zum Archiv":"Deine Frage zu den Suchordnern"});top.Children.Add(q);
  var ask=new Button{Content="Antwort suchen",Margin=new Thickness(0,8,0,8)};top.Children.Add(ask);
  var links=new ListBox{MaxHeight=120};DockPanel.SetDock(links,Dock.Bottom);panel.Children.Add(links);
  var answer=new TextBox{IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};panel.Children.Add(answer);
  using var cancel=new System.Threading.CancellationTokenSource();
  dialog.Closed+=(_,_)=>cancel.Cancel();
  var sources=new List<Eintrag>();
- links.MouseDoubleClick+=(_,_)=>{if(links.SelectedIndex<0)return;var source=sources[links.SelectedIndex];trash.IsChecked=false;areaFilter.SelectedIndex=0;search.Clear();Refresh(source);dialog.Close();};
+ links.MouseDoubleClick+=(_,_)=>{if(links.SelectedIndex<0)return;var source=sources[links.SelectedIndex];if(folderFiles!=null){OpenIndexed(source.Originalname,false);return;}trash.IsChecked=false;areaFilter.SelectedIndex=0;search.Clear();Refresh(source);dialog.Close();};
  ask.Click+=async(_,_)=>{
  if(string.IsNullOrWhiteSpace(q.Text))return;
  ask.IsEnabled=false;links.Items.Clear();sources.Clear();
  try{
  var terms=Regex.Matches(q.Text.ToLowerInvariant(),@"\p{L}{3,}").Select(m=>m.Value).Distinct().Where(t=>!new[]{"wer","wie","wann","was","der","die","das","hat","mir","mein","meine","und","von","zuletzt","ist","den","dem"}.Contains(t)).ToList();
  if(terms.Any(t=>t.Contains("anwalt")||t.Contains("anwält")))terms.AddRange(new[]{"kanzlei","rechtsanw","anwält"});
- var active=entries.Where(e=>!e.Entfernt).ToList();
+ var active=folderFiles??entries.Where(e=>!e.Entfernt).ToList();
  sources.AddRange(active.OrderByDescending(e=>terms.Count(t=>(e.Titel+" "+e.Inhalt+" "+e.Tags+" "+e.Kurzinfo+" "+e.Bereich).Contains(t,StringComparison.OrdinalIgnoreCase))).ThenByDescending(e=>e.Zeitpunkt).Take(12));
  if(sources.Count==0){answer.Text="Das Archiv enthält noch keine Einträge.";return;}
- var docs=sources.Select((e,i)=>new{quelle=i+1,titel=e.Titel,bereich=e.Bereich,importdatum=e.Datum,kurzinfo=e.Kurzinfo,text=e.Inhalt[..Math.Min(2400,e.Inhalt.Length)]});
+ var docs=sources.Select((e,i)=>new{quelle=i+1,titel=e.Titel,pfad=folderFiles==null?null:e.Originalname,bereich=e.Bereich,importdatum=e.Datum,kurzinfo=e.Kurzinfo,text=Excerpt(e.Inhalt,terms,2400)});
  answer.Text="Das lokale Modell liest die ausgewählten Fundstellen …";
  using var client=new System.Net.Http.HttpClient{Timeout=TimeSpan.FromMinutes(4)};
  var request=new{model=model.Text.Trim(),stream=false,options=new{temperature=0,num_ctx=16384},messages=new[]{
@@ -163,7 +164,7 @@ public class Archiv : Window {
  if(!response.IsSuccessStatusCode){answer.Text="Ollama meldet "+(int)response.StatusCode+". Prüfe den Modellnamen. Das Modell muss lokal installiert sein.";return;}
  using var result=JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel.Token));
  answer.Text=result.RootElement.GetProperty("message").GetProperty("content").GetString()+"\n\nBerücksichtigt: "+sources.Count+" von "+active.Count+" Einträgen, jeweils als Auszug. Quelle per Doppelklick öffnen.";
- foreach(var source in sources)links.Items.Add("["+(links.Items.Count+1)+"] "+source.Titel);
+ foreach(var source in sources)links.Items.Add("["+(links.Items.Count+1)+"] "+(folderFiles==null?source.Titel:source.Originalname));
  }catch(System.Net.Http.HttpRequestException){answer.Text="Ollama ist lokal nicht erreichbar. Starte Ollama und lade das gewählte Modell, z. B. mit ollama pull qwen2.5:7b.";}
  catch(OperationCanceledException){answer.Text="Die Anfrage wurde beendet oder hat zu lange gedauert.";}
  catch(Exception ex){answer.Text=ex.Message;}finally{ask.IsEnabled=true;}
