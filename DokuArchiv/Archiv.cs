@@ -57,7 +57,16 @@ public class Archiv : Window {
  Action(bar,"Dateien hinzufügen",async()=>{var d=new OpenFileDialog{Multiselect=true,Filter="Dokumente und Bilder|*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.txt;*.md"};if(d.ShowDialog()==true)await Import(d.FileNames);});
  Action(bar,"Neue Notiz",()=>{Note("");return Task.CompletedTask;});
  Action(bar,"Einfügen",Paste);
- Action(bar,"Sicherungsziel hinzufügen",()=>{var d=new OpenFolderDialog{Title="Synchronisierten OneDrive-, Nextcloud- oder Google-Drive-Ordner wählen"};if(d.ShowDialog()==true){if(Path.GetFullPath(d.FolderName).StartsWith(root,StringComparison.OrdinalIgnoreCase))throw new IOException("Bitte ein Ziel außerhalb des Archivs wählen.");Save(settings,Targets().Append(d.FolderName).Distinct(StringComparer.OrdinalIgnoreCase));}return Task.CompletedTask;});
+ var targetLabel = new TextBlock { Margin=new Thickness(4,5,4,3), TextWrapping=TextWrapping.Wrap };
+ void ShowTargets() {
+   var paths=Targets();
+   targetLabel.Text=paths.Count==0 ? "Sicherungsziele: Noch kein Ordner gewählt" : "Sicherungsziele ("+paths.Count+")\n"+string.Join("\n",paths);
+ }
+ var targetView=new ScrollViewer { Content=targetLabel, MaxHeight=100, VerticalScrollBarVisibility=ScrollBarVisibility.Auto };
+ DockPanel.SetDock(targetView,Dock.Top);
+ layout.Children.Add(targetView);
+ ShowTargets();
+ Action(bar,"Sicherungsziel hinzufügen",()=>{var d=new OpenFolderDialog{Title="Synchronisierten OneDrive-, Nextcloud- oder Google-Drive-Ordner wählen"};if(d.ShowDialog()==true){if(Path.GetFullPath(d.FolderName).StartsWith(root,StringComparison.OrdinalIgnoreCase))throw new IOException("Bitte ein Ziel außerhalb des Archivs wählen.");Save(settings,Targets().Append(d.FolderName).Distinct(StringComparer.OrdinalIgnoreCase));ShowTargets();}return Task.CompletedTask;});
  Action(bar,"Jetzt sichern",Backup);
  Action(bar,"Sicherung einlesen",Restore);
  var filters=new DockPanel{Margin=new Thickness(0,10,0,10)};DockPanel.SetDock(filters,Dock.Top);layout.Children.Add(filters);
