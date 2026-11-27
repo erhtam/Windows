@@ -68,7 +68,10 @@ public class Archiv : Window {
  foreach(var pair in new[]{("Titel",title),("Schlagwörter",tags),("Kurzinfo",summary)}){fields.Children.Add(new Label{Content=pair.Item1});fields.Children.Add(pair.Item2);}
  fields.Children.Add(image);fields.Children.Add(new Label{Content="Inhalt / erkannter Text"});
  var buttons=new WrapPanel();DockPanel.SetDock(buttons,Dock.Bottom);pane.Children.Add(buttons);pane.Children.Add(body);
- Action(buttons,"Speichern",()=>{if(Current is {} e){e.Titel=title.Text;e.Tags=tags.Text;e.Inhalt=body.Text;e.Kurzinfo=summary.Text;Commit();Refresh(e);}return Task.CompletedTask;});
+ var saved = new TextBlock { Foreground=Brushes.DarkGreen, FontWeight=FontWeights.SemiBold, Margin=new Thickness(4,2,4,4) };
+ DockPanel.SetDock(saved,Dock.Bottom);pane.Children.Insert(pane.Children.IndexOf(body),saved);
+ grid.SelectionChanged+=(_,_)=>saved.Text="";
+ Action(buttons,"Speichern",()=>{if(Current is {} e){e.Titel=title.Text;e.Tags=tags.Text;e.Inhalt=body.Text;e.Kurzinfo=summary.Text;Commit();Refresh(e);grid.UnselectAll();ShowEntry();saved.Text="✓ Gespeichert um "+DateTime.Now.ToString("HH:mm:ss");}return Task.CompletedTask;});
  Action(buttons,"Original öffnen",()=>{if(Current is {Datei.Length:>0} e)Process.Start(new ProcessStartInfo(Path.Combine(root,e.Datei)){UseShellExecute=true});return Task.CompletedTask;});
  Action(buttons,"Papierkorb ↔ Archiv",()=>{if(Current is {} e){e.Entfernt=!e.Entfernt;Commit();Refresh();}return Task.CompletedTask;});
  layout.Children.Add(grid);
